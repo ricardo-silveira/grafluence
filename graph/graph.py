@@ -1,14 +1,8 @@
-
 """
 Graph module
 module: graph module
 author: ricardosilveira@poli.ufrj.br
 """
-import numpy as np
-
-
-ADJ_LIST = "adj_list"
-ADJ_MATRIX = "adj_matrix"
 
 
 class Graph(object):
@@ -21,9 +15,6 @@ class Graph(object):
         True for directed edges, False otherwise
     weighted
         True for weighted edges, False otherwise
-    structure
-        'adj_list' if edges will be represented as an adjacency_list
-        'adj_matrix' if edges will be represented as an adjacency_matrix
     n_vertices
         Number of vertices in the graph
     m_edges
@@ -43,16 +34,8 @@ class Graph(object):
         Returns list of neighbors of a given `vertex`
     connected_components()
         Returns connected components of a graph
-    degree_distribution()
-        Returns the pdf of vertices degrees
-    get_diameter()
-        Returns the value of the greatest distance connecting two vertices
-    get_vertex_index()
-        Returns index in data structure
     export_graph_info()
         Writes relevant graph info to file
-    label_to_vertices(label_path)
-        Adds label to vertices from file at label_path
     """
     def __init__(self, **kwargs):
         """
@@ -76,19 +59,14 @@ class Graph(object):
         self.directed = kwargs.get("directed", False)
         self.weighted = kwargs.get("weighted", False)
         self.null_weight = kwargs.get("null_weight", 0)
-        self.structure = kwargs.get("structure", ADJ_LIST)
-        # Key -> vertice in graph file
-        # Value -> vertice index in graph
-        self.vertices_map = {}
-        self.indexes_map = {}
-        self.__vertex_index = 0
+        self.edges = {}
         self.n_vertices = None
         self.m_edges = 0
         # Parsing entire graph file
         if input_file_path:
-            self.parse_graph(input_file_path)
+            self.__parse_graph(input_file_path)
 
-    def parse_graph(self, input_file_path):
+    def __parse_graph(self, input_file_path):
         """
         Parses graph file to add edges
 
@@ -103,14 +81,7 @@ class Graph(object):
             if not self.n_vertices:
                 self.n_vertices = int(edge)
                 # Creates structure for adjacency list
-                if self.structure == ADJ_LIST:
-                    self.edges = self.n_vertices*[self.null_weight]
-                # Creates sctructure for adjacency matrix
-                elif self.structure == ADJ_MATRIX:
-                    self.edges = np.full((self.n_vertices, self.n_vertices),
-                                          self.null_weight)
-                else:
-                    raise ValueError("Invalid graph structure")
+                self.edges = self.n_vertices*[self.null_weight]
             # From second line onwards
             else:
                 if self.weighted:
@@ -195,23 +166,6 @@ class Graph(object):
                     neighbors[v_j] = e_w
             return neighbors
 
-    def get_vertex_index(self, v_i):
-        """
-        Returns mapped vertex index in graph structure
-
-        Parameters
-        ---------
-        v_i: index label as it appears in the graph
-        """
-        # If it is a new vertex, add it to the map
-        if v_i not in self.vertices_map:
-            self.vertices_map[v_i] = self.__vertex_index
-            self.indexes_map[self.__vertex_index] = v_i
-            # Increasing index for next element
-            self.__vertex_index += 1
-        return self.vertices_map[v_i]
-
-
     def connected_components(self, method, *args, **kwargs):
         """
         Returns all connected components in the graph
@@ -249,121 +203,6 @@ class Graph(object):
         c_c.reverse()
         return c_c
 
-    def get_diameter(self, method):
-        """
-        Returns the graph diameter - largest path
-
-        Returns
-        -------
-        int
-            largest distance between a pair of vertices
-        """
-        diameter = 0
-        # Iterating over every vertex
-        for v_i in self.index_map.keys():
-            searcher = method(self)
-            tree, tree_level = searcher.explore_graph(v_i)
-            if searcher.has_vertices_left():
-                print "More than one connected component, infinite diameter"
-                return float("inf")
-            # Updating largest distance
-            largest_distance = max(tree_level.values())
-            if largest_distance > diameter:
-                diameter = largest_distance
-        return largest_distance
-
-    def degree_distribution(self, *args, **kwargs):
-        """
-        Computes a Probability Distribution Function of vertices degree
-        Returns
-        -------
-        dict
-            PDF represented as {value: frequency}
-
-        Examples
-        --------
-        Considering the graph for my_graph.txt
-        >>> G = Graph(my_graph.txt)
-        >>> G.degree_distribution()
-        {1: 1.0}
-        """
-        def update_degree_pdf(degree_pdf, degree, norm):
-            try:
-                degree_pdf[degree] += 1.0/norm
-            except KeyError:
-                degree_pdf[degree] = 1.0/norm
-        degree_pdf = {}
-        #
-        avg_degree = 0.0
-        if self.structure == ADJ_LIST:
-            for v_i, neighbors in self.edges.iteritems():
-                degree = len(neighbors)
-                avg_degree += degree
-                update_degree_pdf(degree_pdf, degree, self.n_vertices)
-        #
-        if self.structure == ADJ_MATRIX:
-            for v_i in xrange(self.n_vertices):
-                degree_i = 0
-                for v_j in xrange(self.n_vertices):
-                    if self.edges[v_i, v_j] != self.null_edge_weight:
-                        degree_i += 1
-                avg_degree += degree_i
-                update_degree_pdf(degree_pdf, degree_i, self.n_vertices)
-        return degree_pdf, avg_degree/self.n_vertices
-
-    def label_to_vertices(self, label_file_path):
-        """
-        Loads labels for vertices returns mapping
-        
-        Parameters
-        ----------
-        label_file_path: str
-            Path for file with following pattern: v_i,label_to_v_i
-        
-        Returns:
-        dict, dict
-            First dictionary maps label to index, meanwhile the
-            second dictionary second maps index to label
-        """
-        label_map = {}
-        reverse_map = {}
-        label_file = open(label_file_path,'r')
-        for vertex_info in label_file:
-            vertex_index, vertex_label = vertex_info.rstrip("\n").split(",")
-            # Tries to convert to int, sometimes it is useful!
-            try:
-                vertex_index = int(vertex_index)
-            except:
-                vertex_index = vertex_index
-            # We need to consider the file not covering the whole graph
-            if vertex_index in self.vertices_map:
-                label_map[vertex_label] = vertex_index
-                reverse_map[vertex_index] = vertex_label
-            else:
-                pass
-        return label_map, reverse_map
-
-    def labeled_vertices(self, reverse_map, vertices_list):
-        """
-        Translates list of vertices to its respective label mapping
-        
-        Parameters
-        ----------
-        reverse_map: dict
-            Mapping from vertex index to its label
-        vertices_list: list
-            Vertices to translate
-
-        Returns
-        -------
-        list
-            List of labeled vertices
-        """
-        labeled_vertices = []
-        for vertex in vertices_list:
-            labeled_vertices.append(reverse_map[vertex])
-        return labeled_vertices
-    
     def export_graph_info(self, *args, **kwargs):
         """
         Generates file with graph information, such as degree distribution

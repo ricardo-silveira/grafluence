@@ -34,8 +34,6 @@ class Graph(object):
         Returns list of neighbors of a given `vertex`
     connected_components()
         Returns connected components of a graph
-    export_graph_info()
-        Writes relevant graph info to file
     """
     def __init__(self, **kwargs):
         """
@@ -169,10 +167,12 @@ class Graph(object):
     def connected_components(self, method, *args, **kwargs):
         """
         Returns all connected components in the graph
+
         Parameters
         ----------
         method: object
             Class which will be used for exploring the graph
+
         Returns
         -------
         list of dicts
@@ -202,17 +202,3 @@ class Graph(object):
                     c_c[j], c_c[j+1] = c_c[j+1], c_c[j]
         c_c.reverse()
         return c_c
-
-    def export_graph_info(self, *args, **kwargs):
-        """
-        Generates file with graph information, such as degree distribution
-        and number of vertices, edges and the average degree
-        """
-        degree_distribution, avg_degree = self.degree_distribution()
-        info_file = open("INFO_"+self.input_file_path, "w+")
-        info_file.write("# n = "+str(self.vertices_count)+"\n")
-        info_file.write("# m = "+str(self.edges_count)+"\n")
-        info_file.write("# d_medio = "+str(avg_degree)+"\n")
-        for degree, frequency in degree_distribution.iteritems():
-            info_file.write("%d %f\n" % (degree, frequency))
-        info_file.close()

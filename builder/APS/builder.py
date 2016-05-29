@@ -2,6 +2,8 @@
 Builder module to extract graph from APS files
 """
 import json
+from os import listdir
+from os.path import isfile, join
 
 
 class Builder(object):
@@ -9,8 +11,8 @@ class Builder(object):
     Class to build APS graphs
     """
     ROOT_PATH = "../../data/APS"
-    CITATION_CSV_PATH = "aps-dataset-citations-2013/" +
-                        "aps-dataset-citations-2013.csv"
+    CITATION_CSV_PATH = "aps-dataset-citations-2013/"
+    CITATION_CSV_PATH += "aps-dataset-citations-2013.csv"
     COAUTHORSHIP_DIR_PATH = "aps-dataset-metadata-2013"
 
     def __init__(self):
@@ -18,78 +20,42 @@ class Builder(object):
                                             self.CITATION_CSV_PATH)
         self.COAUTHORSHIP_DIR_PATH = "%s/%s" % (self.ROOT_PATH,
                                                 self.COAUTHORSHIP_DIR_PATH)
+        self.works = {}
+        self.load_works(self.COAUTHORSHIP_DIR_PATH)
 
-    def build_path(self, vertex_label, dir_path=self.COAUTHORSHIP_DIR_PATH):
+    def load_works(self, current_path, dir_list=None):
         """
-        Creates path to metadata-json file
-
-        Parameters
-        ----------
-        vertex_label: str
-            label for vertex/work in csv file
-        dir_path: str
-            root path to be built on
-
-        Returns
-        -------
-        str
-            Path for json file which contains information about work,
-            such as the authors and publication date.
+        Recursively finds json paths for all files in metadata folder
         """
-        file_name = vertex_label.split("/")[1]
-        vertex_path = "%s/" % dir_path
-        for _ch in file_name:
-            if _ch.isupper():
-                vertex_path += _ch
-        # Only first number becomes a dir
-        vertex_path = "%s/%s" % (vertex_path,
-                                 "/".join(file_name.split(".")[1:2]))
-        vertex_path = "%s/%s.json" % (vertex_path, file_name)
-        return vertex_path
+        if isfile(current_path):
+            work_id, work_info = self.get_info(current_path)
+            self.works[work_id] = work_info
+        else:
+            for this_path in listdir(current_path):
+                self.load_works("%s/%s" % (current_path, this_path))
 
-    def get_works_path(self):
+    def get_info(self, file_path):
         """
-        Returns dictionary of vertices and their respective json file path,
-        which contains information about each work
-
-        Returns
-        -------
-        dict
-            Mapping work name and its corresponding json file path.
-        """
-        works = {}
-        with open(self.CITATION_CSV_PATH) as citation_edges:
-            first_line = True
-            for edges in citation_edges:
-                if not first_line:
-                    target, source = edges.rstrip("\n").split(",")
-                    if source not in works:
-                        works[source] = self.build_path(source)
-                    if target not in works:
-                        works[target] = self.build_path(target)
-                first_line = False
-        return works
-
-    def get_work_info(self, work_path):
-        """
-        Returns relevant information from work.
+        Returns authors, publication date and id.
 
         Parameters
         ---------
-        work_path: str
-            Path for json file which contains all information
-
-        Returns
-        -------
-        dict
-            Keys "authors", holding a list of authors names, and
-            "publication_date".
+        file_path: str
+            Path for json file which contains all work information
         """
+        work_info = {}
+        file_data = json.load(open(file_path))
         authors = []
-        publication_date = None
-        work_data = json.loads(open(work_path))
-        publication_date = work_data["date"]
-        for author in work_date["authors"]:
-            authors.append(author["name"])
-        return {"authors": authors,
-                "publication_date": publication_date}
+        # 
+        if "authors" in file_data:
+            for author in file_data["authors"]:
+                authors.append(author["name"])
+        work_info["authors"] = authors
+        # 
+        work_date = ""
+        if "date" in file_data:
+            work_date = file_data["date"]
+        work_info["publication_date"] = work_date
+        #
+        work_id = file_data["id"]
+        return work_id, work_info

@@ -24,8 +24,8 @@ class Builder(object):
                                             self.CITATION_CSV_PATH)
         self.COAUTHORSHIP_DIR_PATH = kwargs.get("coauthorship_dir_path",
                                                 self.COAUTHORSHIP_DIR_PATH)
-        self.works = {}
-        self.load_works(self.COAUTHORSHIP_DIR_PATH)
+        #self.works = {}
+        #self.load_works(self.COAUTHORSHIP_DIR_PATH)
 
     def load_works(self, current_path, dir_list=None):
         """
@@ -79,55 +79,45 @@ class Builder(object):
     def load_citations(self):
         """
         """
+        works = {}
+        works_citations_json = open("APS_works_citations.json", "w+")
         with open(self.CITATION_CSV_PATH) as csv_file:
             first_line = True
             for line in csv_file:
                 if not first_line:
                     target, source = line.rstrip("\n").split(",")
-                    if source in self.works:
-                        self.works[source].append(target)
+                    if source in works:
+                        works[source].append(target)
                     else:
-                        print source
+                        works[source] = [target]
                 first_line = False
+        works_citations_json.write(json.dumps(works))
+        works_citations_json.close()
 
-    def export_graphs(self):
+    def load_coauthorship(self):
         """
-        Writes citation and co-authorship graphs into file
         """
-        cit_graph = open("APS_citation_graph.txt", "w+")
-        cit_graph.write("author,cited_author,publication_date,publication_id")
-        coauthor_graph = open("APS_coauthorship_graph.txt", "w+")
-        coauthor_graph.write("author_a,author_b,publication_date,publication_id")
+        works_dates_json = open("APS_works_dates.json", "w+")
+        authors_works_json = open("APS_authors_works.json", "w+")
+        works_dates = {}
+        authors_works = {}
+        works_citations = {}
         # For each work u
         for work_id, work_info in self.works.iteritems():
             authors_list = work_info["authors"]
             cited_works_list = work_info["cited_works"]
             publication_date = work_info["publication_date"]
-            # For each author in work u
-            for a_i in range(len(authors_list)):
-                author = authors_list[a_i]
-                # For each work v cited by u
-                for cited_work_id in cited_works_list:
-                    cited_authors_list = self.works[cited_work_id]["authors"]
-                    # For each author b in work v
-                    for cited_author in cited_authors_list:
-                        cit_graph.write("%s,%s,%s,%s\n" % (author,
-                                                           cited_author,
-                                                           publication_date,
-                                                           work_id))
-                # Co-authorship graph
-                for author_b in authors_list[a_i:]:
-                    if author != author_b:
-                        try:
-                            coauthor_graph.write("%s,$s,%s,%s\n" % (str(author),
-                                                                    str(author_b),
-                                                                    str(publication_date),
-                                                                    str(work_id)))
-                        except TypeError:
-                            print author, author_b, publication_date, work_id, "============"
-        coauthor_graph.close()
-        cit_graph.close()
+            works_dates[work_id] = publication_date
+            for author in authors_list:
+                if author not in authors_works:
+                    authors_works[author] = []
+                authors_works[author].append(work_id)
+        works_dates_json.write(json.dumps(works_dates))
+        authors_works_json.write(json.dumps(authors_works))
+        works_dates_json.close()
+        authors_works_json.close()
 
 if __name__ == "__main__":
     aps_builder = Builder()
-    aps_builder.export_graphs()
+    #aps_builder.export_graphs()
+    aps_builder.load_citations()

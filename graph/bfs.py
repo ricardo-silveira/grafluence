@@ -73,4 +73,3 @@ class BFS(Explorer):
                     # Set `v` as discovered
                     visited[v_j] = True
         return (tree, tree_level)
-

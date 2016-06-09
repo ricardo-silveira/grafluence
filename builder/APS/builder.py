@@ -29,14 +29,19 @@ class Builder(object):
 
     def load_works(self, current_path, dir_list=None):
         """
-        Recursively finds json paths for all files in metadata folder
+        Finds json paths for all files in metadata folder
         """
-        if isfile(current_path):
-            work_id, work_info = self.get_info(current_path)
-            self.works[work_id] = work_info
-        else:
-            for this_path in listdir(current_path):
-                self.load_works("%s/%s" % (current_path, this_path))
+        all_files_path = []
+
+        for dir_name in listdir(current_path):
+            dir_path = "%s/%s" % (current_path, dir_name)
+            for sub_dir_name in listdir(dir_path):
+                sub_dir_path = "%s/%s" % (dir_path, sub_dir_name)
+                for file_name in listdir(sub_dir_path):
+                    file_path = "%s/%s" % (sub_dir_path, file_name)
+                    all_files_path.append(file_path)
+                    work_id, work_info = self.get_info(file_path)
+                    self.works[work_id] = work_info
 
     def get_info(self, file_path):
         """
@@ -59,9 +64,14 @@ class Builder(object):
         # Listing authors of publications, if there is any (Editorials)
         if "authors" in file_data:
             for author in file_data["authors"]:
-                authors.append(author["name"])
+                try:
+                    authors.append(author["name"])
+                except KeyError:
+                    print author
+                    print "==============================="
+                    print file_path
         work_info["authors"] = authors
-        work_info["publication_date"] = work_date
+        work_info["publication_date"] = file_data["date"]
         work_info["cited_works"] = []
         work_id = file_data["id"]
         return work_id, work_info
@@ -85,7 +95,9 @@ class Builder(object):
         Writes citation and co-authorship graphs into file
         """
         cit_graph = open("APS_citation_graph.txt", "w+")
+        cit_graph.write("author,cited_author,publication_date,publication_id")
         coauthor_graph = open("APS_coauthorship_graph.txt", "w+")
+        coauthor_graph.write("author_a,author_b,publication_date,publication_id")
         # For each work u
         for work_id, work_info in self.works.iteritems():
             authors_list = work_info["authors"]
@@ -99,14 +111,23 @@ class Builder(object):
                     cited_authors_list = self.works[cited_work_id]["authors"]
                     # For each author b in work v
                     for cited_author in cited_authors_list:
-                        cit_graph.write("%s;%s:%s\n" % (author,
-                                                        cited_author,
-                                                        publication_date))
+                        cit_graph.write("%s,%s,%s,%s\n" % (author,
+                                                           cited_author,
+                                                           publication_date,
+                                                           work_id))
                 # Co-authorship graph
-                for author_b in author_list[a_i:]:
+                for author_b in authors_list[a_i:]:
                     if author != author_b:
-                        coauthor_graph.write("%s;$s:%s\n" % (author,
-                                                             author_b,
-                                                             publication_date))
+                        try:
+                            coauthor_graph.write("%s,$s,%s,%s\n" % (str(author),
+                                                                    str(author_b),
+                                                                    str(publication_date),
+                                                                    str(work_id)))
+                        except TypeError:
+                            print author, author_b, publication_date, work_id, "============"
         coauthor_graph.close()
         cit_graph.close()
+
+if __name__ == "__main__":
+    aps_builder = Builder()
+    aps_builder.export_graphs()

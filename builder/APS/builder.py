@@ -2,8 +2,7 @@
 Builder module to extract graph from APS files
 """
 import json
-from os import listdir
-from os.path import isfile, join
+import os
 
 
 class Builder(object):
@@ -15,7 +14,13 @@ class Builder(object):
     CITATION_CSV_PATH += "aps-dataset-citations-2013.csv"
     COAUTHORSHIP_DIR_PATH = "aps-dataset-metadata-2013"
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, **kwargs):
+        """
+        Sets paths for files
+        """
+        # export_path = kwargs.get("export_path", "data/")
+        # if not os.path.exists(export_path):
+        #     os.makedirs(export_path)
         self.CITATION_CSV_PATH = "%s/%s" % (self.ROOT_PATH,
                                             self.CITATION_CSV_PATH)
         self.COAUTHORSHIP_DIR_PATH = "%s/%s" % (self.ROOT_PATH,
@@ -24,22 +29,20 @@ class Builder(object):
                                             self.CITATION_CSV_PATH)
         self.COAUTHORSHIP_DIR_PATH = kwargs.get("coauthorship_dir_path",
                                                 self.COAUTHORSHIP_DIR_PATH)
-        #self.works = {}
-        #self.load_works(self.COAUTHORSHIP_DIR_PATH)
+        self.works = {}
+        self.load_works(self.COAUTHORSHIP_DIR_PATH)
 
-    def load_works(self, current_path, dir_list=None):
+    def load_works(self, current_path):
         """
         Finds json paths for all files in metadata folder
         """
-        all_files_path = []
-
-        for dir_name in listdir(current_path):
+        for dir_name in os.listdir(current_path):
             dir_path = "%s/%s" % (current_path, dir_name)
-            for sub_dir_name in listdir(dir_path):
+            for sub_dir_name in os.listdir(dir_path):
                 sub_dir_path = "%s/%s" % (dir_path, sub_dir_name)
-                for file_name in listdir(sub_dir_path):
+                for file_name in os.listdir(sub_dir_path):
                     file_path = "%s/%s" % (sub_dir_path, file_name)
-                    all_files_path.append(file_path)
+                    # all_files_path.append(file_path)
                     work_id, work_info = self.get_info(file_path)
                     self.works[work_id] = work_info
 
@@ -49,7 +52,7 @@ class Builder(object):
         publication date
 
         Parameters
-        ---------
+        ----------
         file_path: str
             Path for json file which contains all work information
 
@@ -78,6 +81,10 @@ class Builder(object):
 
     def load_citations(self):
         """
+        Exports
+        -------
+        APS_works_citations.json: Dict: keys => work_id (str)
+                                        values => [work_id (str), ...] (list)
         """
         works = {}
         works_citations_json = open("APS_works_citations.json", "w+")
@@ -96,16 +103,20 @@ class Builder(object):
 
     def load_coauthorship(self):
         """
+        Exports
+        -------
+        APS_works_dates.json: Dict: keys => work_id (str)
+                                    values => publication_date (str)
+        APS_authors_works.json: Dict: keys => Author name (str)
+                                      values => [work_id (str), ...] (list)
         """
         works_dates_json = open("APS_works_dates.json", "w+")
         authors_works_json = open("APS_authors_works.json", "w+")
         works_dates = {}
         authors_works = {}
-        works_citations = {}
         # For each work u
         for work_id, work_info in self.works.iteritems():
             authors_list = work_info["authors"]
-            cited_works_list = work_info["cited_works"]
             publication_date = work_info["publication_date"]
             works_dates[work_id] = publication_date
             for author in authors_list:
@@ -118,6 +129,7 @@ class Builder(object):
         authors_works_json.close()
 
 if __name__ == "__main__":
-    aps_builder = Builder()
+    pass
+    #aps_builder = Builder()
     #aps_builder.export_graphs()
-    aps_builder.load_citations()
+    #aps_builder.load_citations()

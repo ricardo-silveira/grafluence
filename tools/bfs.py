@@ -4,7 +4,6 @@ module: bfs class
 author: ricardosilveira@poli.ufrj.br
 """
 from explorer import Explorer
-from dequeue import Dequeue
 
 
 class BFS(Explorer):
@@ -73,4 +72,3 @@ class BFS(Explorer):
                     # Set `v` as discovered
                     visited[v_j] = True
         return (tree, tree_level)
-

@@ -31,7 +31,6 @@ class Dynamic(object):
             edges to connect to its neighbors from graph_b to graph_a
         """
         ages_graph - {}
-        # Iterating over vertices of one graph
         for vertice in graph_a.vertices():
             neighbors = graph_a.get_neighbors(vertice)
             for neighbor in neighbors:

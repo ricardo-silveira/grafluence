@@ -25,7 +25,7 @@ LOGGER.addHandler(CH)
 LOGGER.setLevel(logging.DEBUG)
 
 
-class Builder(object):
+class APSBuilder(object):
     """
     Class to build APS graphs
     """
@@ -208,20 +208,31 @@ class Builder(object):
         work_id = file_data["id"]
         return work_id, work_info
 
-    def load_citations(self):
+    def load_citations(self, **kwargs):
         """
         Loads relation of cited works.
         """
+        line_counter = 0
+        # dump = kwargs.get("dump", False)
+        # citations_dump_name = kwargs.get("citations_dump_name", "aps_citations")
         with open(self.citation_csv_path) as csv_file:
             first_line = True
+            LOGGER.info("Loading citations!")
             for line in csv_file:
+                line_counter += 1
+                if line_counter % 1000 == 0:
+                    LOGGER.info("Line # %d", line_counter)
                 # Avoids first line comment
                 if not first_line:
                     source, target = line.rstrip("\n").split(",")
                     # ensuring source is a known work
                     if source in self.works:
                         self.works[source]["cited_works"].append(target)
+                    else:
+                        LOGGER.debug("Not listed: %s", source)
                 first_line = False
+        # citations_dump_path = "%s/%s.json" % (self.output_dir_path,
+        #                                       citations_dump_name)
 
     def group_by_time(self, **kwargs):
         """
@@ -282,13 +293,15 @@ class Builder(object):
             graph_file.write(graph_str)
             graph_file.close()
 
-    def citation_graph(self):
+    def citation_graph(self, **kwargs):
         """
         Generates several graph files for citations
         """
         missing_works = {}
         grouped_works = self.group_by_time(time_resolution="year")
-        for work_date, works_list in grouped_works.iteritems():
+        period = kwargs.get("period", grouped_works.keys())
+        for work_date in period:
+            works_list = grouped_works[work_date]
             citation_graphs_dir = "%s/citation_graphs" % self.output_dir_path
             if not os.path.exists(citation_graphs_dir):
                 os.makedirs(citation_graphs_dir)
@@ -322,6 +335,7 @@ class Builder(object):
 if __name__ == "__main__":
     APS_BUILDER = Builder()
     APS_BUILDER.load_works(dump=False, load_from_dump=True)
-    APS_BUILDER.coauthorship_graph()
-    APS_BUILDER.load_citations()
-    APS_BUILDER.citation_graph()
+    # APS_BUILDER.coauthorship_graph()
+    # APS_BUILDER.load_citations()
+    # YEARS_LEFT = [1989+i for i in range(2013-1989+1)]
+    # APS_BUILDER.citation_graph(period=YEARS_LEFT)

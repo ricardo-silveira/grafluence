@@ -133,4 +133,4 @@ class Graph(object):
             value is the weight of the edge connecting them
         """
         # v_i is same as in the edges structure
-        return self.edges[mapped_v_i]
+        return self.edges[v_i]

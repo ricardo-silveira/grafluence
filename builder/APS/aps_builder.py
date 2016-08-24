@@ -3,16 +3,21 @@ Builder module to extract graph from APS files
 """
 import os
 import json
+import time
 from dateutil.parser import parse
 if __name__ == "__main__":
     import sys
     sys.path.append("../")
-    from _helper import dump, set_dir, LOGGER
-    from builder import Builder
-else:
-    from builder._helper import dump, set_dir, LOGGER
-    from builder.builder import Builder
-# pylint: disable=line-too-long, too-many-locals
+from builder import Builder
+from _helper import dump, set_dir, LOGGER
+# pylint: disable=line-too-long
+
+
+# CONSTS FOR ACCESSING LIST IN A READABLE WAY
+WORK_INFO = 1
+AUTHORS_LIST = 0
+CITED_WORKS = 1
+WORK_ID = 2
 
 
 class APSBuilder(Builder):
@@ -43,7 +48,7 @@ class APSBuilder(Builder):
 
     Methods
     -------
-    load_works(**kwargs):
+    find_works(**kwargs):
         Reads json files in sub-dirs from `WORKS_DIR_NAME`, feeding `works`
         with their respectie id, list of authors and publication date.
     load_citations(**kwargs):
@@ -65,15 +70,12 @@ class APSBuilder(Builder):
     ROOT_PATH = "../../data/APS"
     CITATION_CSV_NAME = "aps-dataset-citations-2013.csv"
     WORKS_DIR_NAME = "aps-dataset-metadata-2013"
-    AUTHORS_LIMIT = 100
 
     def __init__(self, **kwargs):
         """
         Sets paths for input and output files, starts dictionary to hold
         works and authors and their respective identifiers.
         """
-        # Limits of authors to consider in graph
-        self.authors_limit = kwargs.get("authors_limit", self.AUTHORS_LIMIT)
         # Directory to house built data
         self.output_dir_path = kwargs.get("output_dir_path", "output")
         set_dir(self.output_dir_path)
@@ -89,75 +91,73 @@ class APSBuilder(Builder):
                                             self.citation_csv_path)
         self.works_dir_path = kwargs.get("works_dir_path",
                                          self.works_dir_path)
-        self.works = {}
-        self.authors = {}
+        # Each element has publication date, authors and cited works
+        self.works = []
+        # Mapping work id to is corresponding element index in works list
+        self.works_map = {}
+        # Number of elements in the the works list
+        self.works_count = 0
+        # Mapping author name to is corresponding element index in authors list
+        self.authors_map = {}
+        # Number of elements in the the authors list
         self.authors_count = 0
-        self.ignored_works = []
 
-    def load_works(self, **kwargs):
+    def find_works(self, **kwargs):
         """
         Loads all works in json files in the metadata folder and their
         respective sub-directories.
+
+        Parameters
+        ----------
+        search_dir_path: str
+            Path for root directory to run a breadth search to find works.
         """
-        # Loading settings
-        dump_works = kwargs.get("dump", False)
-        works_dump_name = kwargs.get("works_dump_name", "aps_works")
-        authors_dump_name = kwargs.get("authors_dump_name", "aps_authors")
-        works_dump_path = "%s/%s.json" % (self.output_dir_path,
-                                          works_dump_name)
-        authors_dump_path = "%s/%s.json" % (self.output_dir_path,
-                                            authors_dump_name)
-        search_dir_path = kwargs.get("search_dir_path", self.works_dir_path)
-        load_from_dump = kwargs.get("load_from_dump", False)
-        # Loading work from a previous build
-        if load_from_dump:
-            with open(works_dump_path, "r") as works_dump:
-                self.works = json.load(works_dump)
-            with open(authors_dump_path, "r") as authors_dump:
-                self.authors = json.load(authors_dump)
-            return
         overview = {"Publishers": 0,
                     "Works": 0,
                     "Retrieved": 0}
+        search_dir_path = kwargs.get("search_dir_path", self.works_dir_path)
+        LOGGER.info("Searching for works...")
+        before = time.time()
         # List of publishers
         for dir_name in os.listdir(search_dir_path):
             dir_path = "%s/%s" % (self.works_dir_path, dir_name)
             overview["Publishers"] += 1
-            LOGGER.info("dir # %d: %s", overview["Publishers"], dir_name)
+            LOGGER.debug("dir # %d: %s", overview["Publishers"], dir_name)
             # List of editions
             for sub_dir_name in os.listdir(dir_path):
                 sub_dir_path = "%s/%s" % (dir_path, sub_dir_name)
-                LOGGER.info("sub-dir: %s", sub_dir_name)
                 # List of works in this edition
                 for file_name in os.listdir(sub_dir_path):
                     overview["Works"] += 1
                     file_path = "%s/%s" % (sub_dir_path, file_name)
-                    try:
-                        # Gets publication_date and author list for each work
-                        work_id, work_info = self._get_work_info(file_path)
-                        if work_info:
-                            overview["Retrieved"] += 1
-                            self.works[work_id] = work_info
-                    # Happens if file has any structural problem
-                    except ValueError:
-                        LOGGER.debug("ValueError exception for %s", work_id)
-        LOGGER.info("Overview: %s", str(overview))
-        # Dumping loaded data
-        if dump_works:
-            dump(self.works, works_dump_path)
-            dump(self.authors, authors_dump_path)
-            dump(overview, "%s/%s.txt" % (self.output_dir_path,
-                                          "aps_works_overview"))
-            dump(self.ignored_works, "%s/%s.json" % (self.output_dir_path,
-                                                     "aps_ignored_works"))
+                    # Gets publication_date and author list for each work
+                    work_date, work_info = self._get_work_info(file_path)
+                    if work_date:
+                        overview["Retrieved"] += 1
+                        self.works.append((work_date, work_info))
+        # Exporting general info
+        dump(overview, "%s/%s.txt" % (self.output_dir_path,
+                                      "aps_works_overview"))
+        LOGGER.info("Loaded %d works after %f seconds", overview["Retrieved"],
+                                                        time.time() - before)
+        self.sort_elements()
 
     def _get_work_info(self, file_path):
         """
         Returns publication_id and a dictionary with authors list, publication
         date and an empt list for cited_works. This method also updates the
         authors dict, which holds each author identifier.
+
+        Parameters
+        ----------
+        file_path: str
+            Path for json file with work information.
+
+        Returns
+        -------
+        (str, [list, list, str])
+            (work_date, [list of authors, list of cited works, work_id])
         """
-        work_info = {}
         file_data = json.load(open(file_path))
         authors_list = []
         # Listing authors of publications, handling possible Editorials
@@ -167,142 +167,235 @@ class APSBuilder(Builder):
                 # Handling error if author does not have a name in json
                 try:
                     # Assigns an id for the author
-                    if isinstance(author, dict) and author["name"] not in self.authors:
-                        self.authors[author["name"]] = self.authors_count
+                    if isinstance(author, dict) and author["name"] not in self.authors_map:
+                        self.authors_map[author["name"]] = self.authors_count
                         self.authors_count += 1
+                    author_idx = self.authors_map[author["name"]]
                     # Inserts author id in list of authors
-                    authors_list.append(self.authors[author["name"]])
+                    authors_list.append(author_idx)
                 except KeyError:
-                    LOGGER.debug("Author %s with no name at %s", str(author), file_path)
-                except TypeError:
-                    LOGGER.error("Bug at file %s", file_path)
+                    LOGGER.error("Work: %s, Bug: unnamed author %s", file_path, str(author))
+                except TypeError, exc:
+                    LOGGER.error("Work: %s, Bug: %s", file_path, exc)
+                    return None, None
         except KeyError:
-            LOGGER.debug("Work %s has 0 authors", file_path)
-            self.ignored_works.append({"path": file_path,
-                                       "authors_count": 0})
+            LOGGER.error("Work: %s, Alert: 0 authors!", file_path)
             return None, None
-        work_info["authors"] = authors_list
-        work_info["publication_date"] = file_data["date"]
-        work_info["cited_works"] = []
-        work_id = file_data["id"]
-        return work_id, work_info
+        return (file_data["date"], [authors_list, [], file_data["id"]])
+
+    def sort_elements(self):
+        """
+        """
+        LOGGER.info("Sorting elements...")
+        before = time.time()
+        # Sorting works by date
+        self.works.sort()
+        # Mapping work_id and their respective index in list
+        for work_idx, (work_date, work_info) in enumerate(self.works):
+            work_id = work_info.pop(WORK_ID)
+            self.works_map[work_id] = work_idx
+        LOGGER.info("Elements sorted after %f seconds", time.time() - before)
+
+    def load_from_dump(self, **kwargs):
+        authors_dump_name = kwargs.get("authors_dump_name", "aps_authors")
+        authors_dump_path = "%s/%s.json" % (self.output_dir_path,
+                                            authors_dump_name)
+        works_dump_name = kwargs.get("works_dump_name", "aps_works")
+        works_dump_path = "%s/%s.json" % (self.output_dir_path,
+                                          works_dump_name)
+        works_map_dump_path = works_dump_path.replace(".json", "_map.json")
+        with open(works_map_dump_path, "r") as works_map_dump:
+            self.works_map = json.load(works_map_dump)
+        with open(works_dump_path, "r") as works_dump:
+            self.works = json.load(works_dump)
+
+    def dump_data(self, **kwargs):
+        works_dump_path = kwargs.get("works_dump_path",
+                                     "%s/%s.json" % (self.output_dir_path, "aps_works"))
+        authors_dump_path = kwargs.get("authors_dump_path",
+                                       "%s/%s.json" % (self.output_dir_path, "aps_authors"))
+        works_map_dump_path = works_dump_path.replace(".json", "_map.json")
+        authors_map_dump_path = authors_dump_path.replace(".json", "_map.json")
+        # Dumping loaded data
+        dump(self.works, works_dump_path)
+        dump(self.works_map, works_map_dump_path)
+        dump(self.authors_map, authors_map_dump_path)
 
     def load_citations(self, **kwargs):
         """
         Loads relation of cited works from csv file, in which each line represents
         a work citing another.
+
+        Parameters
+        ----------
+        citation_csv_path: str
+            Path for csv file with works citations.
         """
         line_counter = 0
         citation_csv_path = kwargs.get("citation_csv_path", self.citation_csv_path)
+        not_listed = {}
+        LOGGER.info("Loading citations!")
+        before = time.time()
         with open(citation_csv_path) as csv_file:
             first_line = True
-            LOGGER.info("Loading citations!")
             for line in csv_file:
                 line_counter += 1
-                if line_counter % 1000 == 0:
-                    LOGGER.info("Line # %d", line_counter)
+                if line_counter % 50000 == 0:
+                    LOGGER.debug("Line # %d", line_counter)
                 # Avoids first line comment
                 if not first_line:
-                    source, target = line.rstrip("\n").split(",")
-                    # ensuring source is a known work
-                    if source in self.works:
-                        self.works[source]["cited_works"].append(target)
+                    source_id, target_id = line.rstrip("\n").split(",")
+                    # ensuring source and target are known works
+                    if source_id in self.works_map and target_id in self.works_map:
+                        source = self.works_map[source_id]
+                        target = self.works_map[target_id]
+                        self.works[source][CITED_WORKS].append(target)
                     else:
-                        LOGGER.debug("Not listed: %s", source)
+                        if source_id not in not_listed:
+                            not_listed[source_id] = 0
+                        not_listed[source_id] += 1
                 first_line = False
+        dump(not_listed, "%s/%s.json" % (self.output_dir_path, "non_listed"))
+        LOGGER.info("Non-listed works: %d", len(not_listed.keys()))
+        LOGGER.info("%d citations loaded after %f seconds", line_counter, time.time() - before)
+
+    @staticmethod
+    def is_same_resolution(ref_date, check_date, resolution):
+        """
+        Returns True if check date belongs to same ref_date period.
+
+        Examples
+        --------
+        >>> solve_date("2015-10-24", "2015-10-20", "month")
+        True
+
+        >>> solve_date("2015-11-24", "2015-10-24", "month")
+        False
+
+        >>> solve_date("2015-11-24", "2015-05-20", "year")
+        True
+
+        >>> solve_date("2014-10-16", "2012-11-30", "year")
+        False
+        """
+        if resolution in ["year", "month"]:
+            aux_date = check_date.replace(year=max(ref_date, check_date).year)
+            if resolution == "month":
+                aux_date = aux_date.replace(month=max(ref_date, check_date).month)
+                aux_date = aux_date.replace(day=ref_date.day)
+            if aux_date != ref_date:
+                return False
+            else:
+                return True
 
     def group_by_time(self, **kwargs):
         """
-        Returns dictionary with time and list of works matching the time
-        window.
+        Considering that works list is already sorted by date.
         """
-        grouped_works = {}
-        time_resolution = kwargs.get("time_resolution", "year")
-        for work_id, work_info in self.works.iteritems():
-            publication_date = parse(work_info["publication_date"])
-            if time_resolution == "year":
-                work_date = str(publication_date.year)
-            if time_resolution == "month":
-                work_date = "%d/%d" % (publication_date.month,
-                                       publication_date.year)
-            if work_date not in grouped_works:
-                grouped_works[work_date] = []
-            grouped_works[work_date].append(work_id)
-        return grouped_works
+        groups = []
+        # Becomes zero at first iteration
+        time_index = -1
+        resolution = kwargs.get("resolution", "year")
+        # Used to compare dates
+        first_date = True
+        for work_idx, (work_date, work_info) in enumerate(self.works):
+            work_date = parse(work_date)
+            if first_date:
+                group_date = work_date
+                first_date = False
+                groups.append([group_date, []])
+                time_index += 1
+            if not self.is_same_resolution(group_date, work_date, resolution):
+                time_index += 1
+                group_date = work_date
+                groups.append([group_date, []])
+            groups[time_index][1].append(work_idx)
+        return groups
 
-    def make_coauthorship_graph(self, **kwargs):
+    def make_coauthorship_graphs(self, **kwargs):
         """
         For each time period, writes a file representing a graph in which
         each line represents an author publishing a work with another author.
         The edges are weighted, which is inversely proportional to the number
         of co-authors in the work.
         """
-        resolution = kwargs.get("resolution", "year")
+        resolution = kwargs.get("resolution", "month")
         created_files = []
-        grouped_works = self.group_by_time(time_resolution=resolution)
+        grouped_works = self.group_by_time(resolution=resolution)
         # Directory for coauthorship graphs
-        coauthorship_graphs_dir = "%s/coautorship_graphs" % self.output_dir_path
-        for work_date, works_list in grouped_works.iteritems():
-            # Creating one folder per year
-            if time_resolution == "month":
-                set_dir("%s/%s" % (coauthorship_graphs_dir, work_date.split("/")[0])
-            graph_file_name = "%s/aps_coauthorship_%s.csv" % (coauthorship_graphs_dir,
-                                                              work_date)
+        coauthorship_graphs_dir = "%s/coauthorship_graphs" % self.output_dir_path
+        for (ref_date, works_list) in grouped_works:
+            graph_file_name = self.get_graph_file_name(coauthorship_graphs_dir, ref_date, resolution, "coauthorship")
             created_files.append(graph_file_name)
-            LOGGER.info("Building coauthorship graph %s", work_date)
-            edges = {}
+            self._make_graph({}, graph_file_name, header=["author_i", "author_j", "weight"])
+            LOGGER.info("Building coauthorship graph %s", ref_date)
             # Listing works in that time period
             for work_id in works_list:
-                authors = self.works[work_id]["authors"]
-                authors_count = len(authors)
+                authors_list = self.works[work_id][WORK_INFO][AUTHORS_LIST]
+                authors_count = len(authors_list)
                 # Non-individual works
                 if authors_count > 1:
                     weight = 1.0/(authors_count-1)
                     for i in xrange(authors_count):
-                        # avoiding repeated edges
-                        for j in xrange(authors_count-i-1):
-                            self.add_edge(edges, authors[i], authors[j+i+1], weight)
+                        edges = {}
+                        author_i = authors_list[i]
+                        # Avoids repeated edge in same click
+                        for j in xrange(authors_count-1-i):
+                            author_j = authors_list[j+i+1]
+                            self.add_edge(edges, author_i, author_j, weight)
+                        # Writes to file after each author
+                        self._make_graph(edges, graph_file_name, open_mode="a")
                 # If solo-work, then represent edge with null weight
                 if authors_count == 1:
-                    self.add_edge(edges, authors[0], authors[0], 0.0)
-            self._make_graph(edges, graph_file_name, header=["author_i", "author_j", "weight"])
+                    edges = {}
+                    self.add_edge(edges, authors_list[0], authors_list[0], 0.0)
+                    self._make_graph(edges, graph_file_name, open_mode="a")
+            self.unify_edges(graph_file_name)
             LOGGER.info("Graph stored at %s", graph_file_name)
         with open("%s/files.json" % coauthorship_graphs_dir, "wb") as files:
             files.write(json.dumps(created_files))
 
-    def make_citation_graph(self, **kwargs):
+    def get_graph_file_name(self, output_dir, ref_date, resolution, g_type):
+        # Creating one folder per year
+        date_str = "%d/%d/%d" % (ref_date.year, ref_date.month, ref_date.day)
+        if resolution == "month":
+            graph_dir = set_dir("%s/%s" % (output_dir, date_str.split("/")[0]))
+            graph_file_name = "%s/aps_%s_%s_%s.csv" % (graph_dir,
+                                                       g_type,
+                                                       date_str.split("/")[0],
+                                                       date_str.split("/")[1])
+        if resolution == "year":
+            graph_dir = set_dir(output_dir)
+            graph_file_name = "%s/aps_%s_%s.csv" % (graph_dir,
+                                                    g_type,
+                                                    date_str.split("/")[1])
+        return graph_file_name
+
+    def make_citation_graphs(self, **kwargs):
         """
         For each time period, writes a file representing a graph in which
         each line represents an author citing another author. The edges are
         weighted, which is inversely proportional to the number of authors
         in the cited work.
         """
-        missing_works = {}
         resolution = kwargs.get("resolution", "year")
-        grouped_works = self.group_by_time(time_resolution=resolution)
-        period = kwargs.get("period", grouped_works.keys())
+        grouped_works = self.group_by_time(resolution=resolution)
         citation_graphs_dir = "%s/citation_graphs" % self.output_dir_path
-        set_dir(citation_graph_dir)
+        set_dir(citation_graphs_dir)
+        created_files = []
         # For each time mark T
-        for work_date in period:
-            # Creating one folder per year
-            if time_resolution == "month":
-                set_dir("%s/%s" % (citation_graphs_dir, work_date.split("/")[0])
-            # Retrieving list of works
-            works_list = grouped_works[work_date]
-            # Creates file to write graph
-            graph_file_name = "%s/aps_citation_%s.txt" % (citation_graphs_dir,
-                                                          work_date)
-            graph_file = open(graph_file_name, "w+")
+        for (ref_date, works_list) in grouped_works:
+            LOGGER.info("Building citation graph %s", ref_date)
+            graph_file_name = self.get_graph_file_name(citation_graphs_dir, ref_date, resolution, "citations")
             created_files.append(graph_file_name)
-            LOGGER.info("Building coauthorship graph %s", work_date)
-            edges = {}
+            self._make_graph({}, graph_file_name, header=["author_i", "author_j", "weight"])
             # For each work i in time T
             for work_id in works_list:
                 # Loading list of authors and list of cited works
                 cited_works = self.works[work_id]["cited_works"]
                 work_authors = self.works[work_id]["authors"]
                 # For each work j cited by work i
+                edges = {}
                 for cited_work in cited_works:
                     try:
                         # Loading list of authors in work j
@@ -312,12 +405,11 @@ class APSBuilder(Builder):
                         for author_a in work_authors:
                             # For each author y \in work j
                             for author_b in cited_authors:
-                                self.add_edge(edges, authors[i], authors[j+i+1], weight)
+                                self.add_edge(edges, author_a, author_b, weight, directed=True)
                     except KeyError:
-                        if cited_work not in missing_works:
-                            missing_works[cited_work] = []
-                            missing_works[cited_work].append(cited_work)
-            self._make_graph(edges, graph_file_name, header=["author_i", "author_j", "weight"])
+                        pass
+                self._make_graph(edges, graph_file_name, open_mode="a+")
+            self.unify_edges(graph_file_name)
             LOGGER.info("Graph stored at %s", graph_file_name)
         with open("%s/files.json" % citation_graphs_dir, "wb") as files:
             files.write(json.dumps(created_files))
@@ -325,8 +417,9 @@ class APSBuilder(Builder):
 
 if __name__ == "__main__":
     APS_BUILDER = APSBuilder()
-    APS_BUILDER.load_works(dump=False, load_from_dump=True)
-    APS_BUILDER.make_coauthorship_graph()
+    #APS_BUILDER.find_works()
     #APS_BUILDER.load_citations()
-    #YEARS_LEFT = [1989+i for i in range(2013-1989+1)]
-    #APS_BUILDER.citation_graph(period=YEARS_LEFT)
+    #APS_BUILDER.dump_data()
+    #APS_BUILDER.load_from_dump()
+    #APS_BUILDER.make_coauthorship_graphs(resolution="month")
+    #APS_BUILDER.make_citation_graphs(resolution="month")

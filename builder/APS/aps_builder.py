@@ -191,8 +191,8 @@ class APSBuilder(Builder):
         # Sorting works by date
         self.works.sort()
         # Mapping work_id and their respective index in list
-        for work_idx, (work_date, work_info) in enumerate(self.works):
-            work_id = work_info.pop(WORK_ID)
+        for work_idx in xrange(len(self.works)):
+            work_id = self.works[work_idx][WORK_INFO].pop(WORK_ID)
             self.works_map[work_id] = work_idx
         LOGGER.info("Elements sorted after %f seconds", time.time() - before)
 
@@ -249,7 +249,7 @@ class APSBuilder(Builder):
                     if source_id in self.works_map and target_id in self.works_map:
                         source = self.works_map[source_id]
                         target = self.works_map[target_id]
-                        self.works[source][CITED_WORKS].append(target)
+                        self.works[source][WORK_INFO][CITED_WORKS].append(target)
                     else:
                         if source_id not in not_listed:
                             not_listed[source_id] = 0
@@ -259,59 +259,6 @@ class APSBuilder(Builder):
         LOGGER.info("Non-listed works: %d", len(not_listed.keys()))
         LOGGER.info("%d citations loaded after %f seconds", line_counter, time.time() - before)
 
-    @staticmethod
-    def is_same_resolution(ref_date, check_date, resolution):
-        """
-        Returns True if check date belongs to same ref_date period.
-
-        Examples
-        --------
-        >>> solve_date("2015-10-24", "2015-10-20", "month")
-        True
-
-        >>> solve_date("2015-11-24", "2015-10-24", "month")
-        False
-
-        >>> solve_date("2015-11-24", "2015-05-20", "year")
-        True
-
-        >>> solve_date("2014-10-16", "2012-11-30", "year")
-        False
-        """
-        if resolution in ["year", "month"]:
-            aux_date = check_date.replace(year=max(ref_date, check_date).year)
-            if resolution == "month":
-                aux_date = aux_date.replace(month=max(ref_date, check_date).month)
-                aux_date = aux_date.replace(day=ref_date.day)
-            if aux_date != ref_date:
-                return False
-            else:
-                return True
-
-    def group_by_time(self, **kwargs):
-        """
-        Considering that works list is already sorted by date.
-        """
-        groups = []
-        # Becomes zero at first iteration
-        time_index = -1
-        resolution = kwargs.get("resolution", "year")
-        # Used to compare dates
-        first_date = True
-        for work_idx, (work_date, work_info) in enumerate(self.works):
-            work_date = parse(work_date)
-            if first_date:
-                group_date = work_date
-                first_date = False
-                groups.append([group_date, []])
-                time_index += 1
-            if not self.is_same_resolution(group_date, work_date, resolution):
-                time_index += 1
-                group_date = work_date
-                groups.append([group_date, []])
-            groups[time_index][1].append(work_idx)
-        return groups
-
     def make_coauthorship_graphs(self, **kwargs):
         """
         For each time period, writes a file representing a graph in which
@@ -320,56 +267,47 @@ class APSBuilder(Builder):
         of co-authors in the work.
         """
         resolution = kwargs.get("resolution", "month")
+        start_from_year = kwargs.get("start_from_year", 0)
         created_files = []
-        grouped_works = self.group_by_time(resolution=resolution)
+        grouped_works = self.group_by_time(self.works, resolution=resolution)
         # Directory for coauthorship graphs
         coauthorship_graphs_dir = "%s/coauthorship_graphs" % self.output_dir_path
         for (ref_date, works_list) in grouped_works:
-            graph_file_name = self.get_graph_file_name(coauthorship_graphs_dir, ref_date, resolution, "coauthorship")
-            created_files.append(graph_file_name)
-            self._make_graph({}, graph_file_name, header=["author_i", "author_j", "weight"])
-            LOGGER.info("Building coauthorship graph %s", ref_date)
-            # Listing works in that time period
-            for work_id in works_list:
-                authors_list = self.works[work_id][WORK_INFO][AUTHORS_LIST]
-                authors_count = len(authors_list)
-                # Non-individual works
-                if authors_count > 1:
-                    weight = 1.0/(authors_count-1)
-                    for i in xrange(authors_count):
-                        edges = {}
-                        author_i = authors_list[i]
-                        # Avoids repeated edge in same click
-                        for j in xrange(authors_count-1-i):
-                            author_j = authors_list[j+i+1]
-                            self.add_edge(edges, author_i, author_j, weight)
-                        # Writes to file after each author
-                        self._make_graph(edges, graph_file_name, open_mode="a")
-                # If solo-work, then represent edge with null weight
-                if authors_count == 1:
-                    edges = {}
-                    self.add_edge(edges, authors_list[0], authors_list[0], 0.0)
-                    self._make_graph(edges, graph_file_name, open_mode="a")
-            self.unify_edges(graph_file_name)
-            LOGGER.info("Graph stored at %s", graph_file_name)
+            if ref_date.year >= start_from_year:
+                graph_file_name = self.get_graph_file_name(coauthorship_graphs_dir, ref_date, resolution, "coauthorship")
+                created_files.append(graph_file_name)
+                self._make_graph({}, graph_file_name, header=["author_i", "author_j", "weight"])
+                LOGGER.info("Building coauthorship graph %s", ref_date)
+                # Listing works in that time period
+                for work_id in works_list:
+                    self.coauthors_graph(work_id, graph_file_name)
+                self.sum_edges(graph_file_name)
+                LOGGER.info("Graph stored at %s", graph_file_name)
         with open("%s/files.json" % coauthorship_graphs_dir, "wb") as files:
             files.write(json.dumps(created_files))
 
-    def get_graph_file_name(self, output_dir, ref_date, resolution, g_type):
-        # Creating one folder per year
-        date_str = "%d/%d/%d" % (ref_date.year, ref_date.month, ref_date.day)
-        if resolution == "month":
-            graph_dir = set_dir("%s/%s" % (output_dir, date_str.split("/")[0]))
-            graph_file_name = "%s/aps_%s_%s_%s.csv" % (graph_dir,
-                                                       g_type,
-                                                       date_str.split("/")[0],
-                                                       date_str.split("/")[1])
-        if resolution == "year":
-            graph_dir = set_dir(output_dir)
-            graph_file_name = "%s/aps_%s_%s.csv" % (graph_dir,
-                                                    g_type,
-                                                    date_str.split("/")[1])
-        return graph_file_name
+    def coauthors_graph(self, work_id, graph_file_name):
+        """
+        """
+        authors_list = self.works[work_id][WORK_INFO][AUTHORS_LIST]
+        authors_count = len(authors_list)
+        # Non-individual works
+        if authors_count > 1:
+            weight = 1.0/(authors_count-1)
+            for i in xrange(authors_count):
+                edges = {}
+                author_i = authors_list[i]
+                # Avoids repeated edge in same click
+                for j in xrange(authors_count-1-i):
+                    author_j = authors_list[j+i+1]
+                    self.add_edge(edges, author_i, author_j, weight)
+                # Writes to file after each author
+                self._make_graph(edges, graph_file_name, open_mode="a")
+        # If solo-work, then represent edge with null weight
+        if authors_count == 1:
+            edges = {}
+            self.add_edge(edges, authors_list[0], authors_list[0], 0.0)
+            self._make_graph(edges, graph_file_name, open_mode="a")
 
     def make_citation_graphs(self, **kwargs):
         """
@@ -379,7 +317,7 @@ class APSBuilder(Builder):
         in the cited work.
         """
         resolution = kwargs.get("resolution", "year")
-        grouped_works = self.group_by_time(resolution=resolution)
+        grouped_works = self.group_by_time(self.works, resolution=resolution)
         citation_graphs_dir = "%s/citation_graphs" % self.output_dir_path
         set_dir(citation_graphs_dir)
         created_files = []
@@ -391,35 +329,38 @@ class APSBuilder(Builder):
             self._make_graph({}, graph_file_name, header=["author_i", "author_j", "weight"])
             # For each work i in time T
             for work_id in works_list:
-                # Loading list of authors and list of cited works
-                cited_works = self.works[work_id]["cited_works"]
-                work_authors = self.works[work_id]["authors"]
-                # For each work j cited by work i
-                edges = {}
-                for cited_work in cited_works:
-                    try:
-                        # Loading list of authors in work j
-                        cited_authors = self.works[cited_work]["authors"]
-                        weight = 1.0/len(cited_authors)
-                        # For each author x \in work i
-                        for author_a in work_authors:
-                            # For each author y \in work j
-                            for author_b in cited_authors:
-                                self.add_edge(edges, author_a, author_b, weight, directed=True)
-                    except KeyError:
-                        pass
-                self._make_graph(edges, graph_file_name, open_mode="a+")
-            self.unify_edges(graph_file_name)
+                self.citations_graph(work_id, graph_file_name)
+            self.sum_edges(graph_file_name)
             LOGGER.info("Graph stored at %s", graph_file_name)
         with open("%s/files.json" % citation_graphs_dir, "wb") as files:
             files.write(json.dumps(created_files))
 
+    def citations_graph(self, work_id, graph_file_name):
+        # Loading list of authors and list of cited works
+        cited_works = self.works[work_id][WORK_INFO][CITED_WORKS]
+        work_authors = self.works[work_id][WORK_INFO][AUTHORS_LIST]
+        # For each work j cited by work i
+        for cited_work in cited_works:
+            edges = {}
+            try:
+                # Loading list of authors in work j
+                cited_authors = self.works[cited_work][WORK_INFO][AUTHORS_LIST]
+                weight = 1.0/len(cited_authors)
+                # For each author x \in work i
+                for author_a in work_authors:
+                    # For each author y \in work j
+                    for author_b in cited_authors:
+                        self.add_edge(edges, author_a, author_b, weight, directed=True)
+            except KeyError:
+                pass
+            self._make_graph(edges, graph_file_name, open_mode="a+")
+
 
 if __name__ == "__main__":
     APS_BUILDER = APSBuilder()
-    #APS_BUILDER.find_works()
-    #APS_BUILDER.load_citations()
-    #APS_BUILDER.dump_data()
+    APS_BUILDER.find_works()
     #APS_BUILDER.load_from_dump()
-    #APS_BUILDER.make_coauthorship_graphs(resolution="month")
-    #APS_BUILDER.make_citation_graphs(resolution="month")
+    APS_BUILDER.load_citations()
+    APS_BUILDER.dump_data()
+    APS_BUILDER.make_citation_graphs(resolution="month")
+    APS_BUILDER.make_coauthorship_graphs(resolution="month")

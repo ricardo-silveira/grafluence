@@ -22,48 +22,48 @@ WORK_ID = 2
 
 class APSBuilder(Builder):
     """
-    Builds citation and coauthorship graph based on APS (American Physical
-    Society) dataset. If two researchers have published together and their
-    work cites N other works, then the connection between these two
-    researchers will be represented in the coauthorship graph. Meanwhile in
-    the citation graph, each researcher will be linked to the authors of
+    Builds citation and co-authorship graph based on APS (American Physical
+    Society) dataset. For co-authorship, the vertices are authors and the edges
+    are undirected and represented if they have published a work together.
+    As for citation graph, if the published work cites other works, each author
+    of the citing work will be linked by a directed edge to every author in
     the cited works.
 
     Attributes
     ----------
-    ROOT_PATH: str
+    root_path: str
         Root path to access any possible and valid path for program.
-    CITATION_CSV_NAME: str
+    citation_csv_name: str
         Name of csv file which presents the citations links.
-    WORKS_DIR_NAME: str
-        Name of parent directory hosting all works json files.
-    AUTHORS_LIMIT: int
-        Not considerng works with more authors than this limit.
-    works: dict
+    works_dir_name: str
+        Name of parent directory hosting all works metadata json files.
+    works: list
+        List of works with their their publication date, cited works and authors.
+    works_map: dict
         Maps works by id to their publication date, cited works and authors.
-    authors: dict
-        Maps authors names to their respective ids in graph file.
     output_dir_path: str
-        Path for to export all built data.
+        Path to export all built data.
 
     Methods
     -------
     find_works(**kwargs):
-        Reads json files in sub-dirs from `WORKS_DIR_NAME`, feeding `works`
-        with their respectie id, list of authors and publication date.
+        Parses all json files found in sub-dirs from `WORKS_DIR_NAME`, getting
+        authors information and publication date of each work.
     load_citations(**kwargs):
         Reads csv file with citations links, updating `works` with list of
         cited works by each work.
     group_by_time(**kwargs):
         Group works by time, appending list of works for each time mark.
     make_coauthorship_graph(**kwargs):
-        Exports an undirected weighted graph, each line representing an
-        author working together with another author. The weight is inversely
-        proportional to the number of co-authors.
+        Exports an undirected weighted graph for time mark. For each graph
+        file, the lines represent the edges between two authors who published
+        a work together. The weight is inversely proportional to the number
+        authors in the work.
     make_citations_graph(**kwargs):
-        Exports a directed weighted graph, each line representing an author
-        citing the work of another author. The weight is inversely
-        proportional to the number of authors in the cited work.
+        Exports a directed weighted graph for time mark. For each graph
+        file, the lines represent the edges between two authors who cited
+        each other in a work. The weight is inversely proportional to the number
+        authors in the cited work.
     """
     # pylint: disable=too-many-instance-attributes
 
@@ -105,21 +105,16 @@ class APSBuilder(Builder):
     def find_works(self, **kwargs):
         """
         Loads all works in json files in the metadata folder and their
-        respective sub-directories.
-
-        Parameters
-        ----------
-        search_dir_path: str
-            Path for root directory to run a breadth search to find works.
+        respective sub-directories. The work information is stored in
+        `self.works`.
         """
         overview = {"Publishers": 0,
                     "Works": 0,
                     "Retrieved": 0}
-        search_dir_path = kwargs.get("search_dir_path", self.works_dir_path)
         LOGGER.info("Searching for works...")
         before = time.time()
         # List of publishers
-        for dir_name in os.listdir(search_dir_path):
+        for dir_name in os.listdir(self.works_dir_path):
             dir_path = "%s/%s" % (self.works_dir_path, dir_name)
             overview["Publishers"] += 1
             LOGGER.debug("dir # %d: %s", overview["Publishers"], dir_name)
@@ -132,31 +127,23 @@ class APSBuilder(Builder):
                     file_path = "%s/%s" % (sub_dir_path, file_name)
                     # Gets publication_date and author list for each work
                     work_date, work_info = self._get_work_info(file_path)
+                    # If data is fine, hence work_date is not None
                     if work_date:
                         overview["Retrieved"] += 1
                         self.works.append((work_date, work_info))
-        # Exporting general info
+        # Exporting overview info
         dump(overview, "%s/%s.txt" % (self.output_dir_path,
                                       "aps_works_overview"))
         LOGGER.info("Loaded %d works after %f seconds", overview["Retrieved"],
                                                         time.time() - before)
         self.sort_elements()
+        self.authors_map = None
 
     def _get_work_info(self, file_path):
         """
         Returns publication_id and a dictionary with authors list, publication
         date and an empt list for cited_works. This method also updates the
         authors dict, which holds each author identifier.
-
-        Parameters
-        ----------
-        file_path: str
-            Path for json file with work information.
-
-        Returns
-        -------
-        (str, [list, list, str])
-            (work_date, [list of authors, list of cited works, work_id])
         """
         file_data = json.load(open(file_path))
         authors_list = []
@@ -185,6 +172,8 @@ class APSBuilder(Builder):
 
     def sort_elements(self):
         """
+        Sorting works list by publication date, and for each work, sorting
+        the list of authors.
         """
         LOGGER.info("Sorting elements...")
         before = time.time()
@@ -194,9 +183,13 @@ class APSBuilder(Builder):
         for work_idx in xrange(len(self.works)):
             work_id = self.works[work_idx][WORK_INFO].pop(WORK_ID)
             self.works_map[work_id] = work_idx
+            self.works[work_id][WORK_INFO][AUTHORS_LIST].sort()
         LOGGER.info("Elements sorted after %f seconds", time.time() - before)
 
     def load_from_dump(self, **kwargs):
+        """
+        Loads authors map, works map and works list json files into memory.
+        """
         authors_dump_name = kwargs.get("authors_dump_name", "aps_authors")
         authors_dump_path = "%s/%s.json" % (self.output_dir_path,
                                             authors_dump_name)
@@ -210,10 +203,11 @@ class APSBuilder(Builder):
             self.works = json.load(works_dump)
 
     def dump_data(self, **kwargs):
-        works_dump_path = kwargs.get("works_dump_path",
-                                     "%s/%s.json" % (self.output_dir_path, "aps_works"))
-        authors_dump_path = kwargs.get("authors_dump_path",
-                                       "%s/%s.json" % (self.output_dir_path, "aps_authors"))
+        """
+        Saves authors map, works map and works list as json files.
+        """
+        works_dump_path = "%s/%s.json" % (self.output_dir_path, "aps_works")
+        authors_dump_path = "%s/%s.json" % (self.output_dir_path, "aps_authors")
         works_map_dump_path = works_dump_path.replace(".json", "_map.json")
         authors_map_dump_path = authors_dump_path.replace(".json", "_map.json")
         # Dumping loaded data
@@ -225,11 +219,6 @@ class APSBuilder(Builder):
         """
         Loads relation of cited works from csv file, in which each line represents
         a work citing another.
-
-        Parameters
-        ----------
-        citation_csv_path: str
-            Path for csv file with works citations.
         """
         line_counter = 0
         citation_csv_path = kwargs.get("citation_csv_path", self.citation_csv_path)
@@ -265,16 +254,38 @@ class APSBuilder(Builder):
         each line represents an author publishing a work with another author.
         The edges are weighted, which is inversely proportional to the number
         of co-authors in the work.
+
+        Parameters
+        ----------
+        resolution: str
+            If 'year', the time period is year, creating a graph file per year.
+            If 'month', the time period is month, creating a folder for each
+            year within files for each month with data.
+            Default: 'year'.
+        start_from_year: int
+            For time range, considering works published from this year onward.
+            Default: 0.
+        until_year: float
+            For time range, considering works published until this year.
+            Default: inf.
+
+        Returns
+        -------
+        dict:
+            Dictionary with paths for all created files.
         """
         resolution = kwargs.get("resolution", "month")
-        start_from_year = kwargs.get("start_from_year", 0)
+        from_year = kwargs.get("from_year", 0)
+        until_year = kwargs.get("until_year", float("inf"))
         created_files = []
         grouped_works = self.group_by_time(self.works, resolution=resolution)
         # Directory for coauthorship graphs
         coauthorship_graphs_dir = "%s/coauthorship_graphs" % self.output_dir_path
         for (ref_date, works_list) in grouped_works:
-            if ref_date.year >= start_from_year:
-                graph_file_name = self.get_graph_file_name(coauthorship_graphs_dir, ref_date, resolution, "coauthorship")
+            if ref_date.year >= from_year and ref_date.year < until_year:
+                graph_file_name = self.get_graph_file_name(coauthorship_graphs_dir,
+                                                           ref_date, resolution,
+                                                           "coauthorship")
                 created_files.append(graph_file_name)
                 self._make_graph({}, graph_file_name, header=["author_i", "author_j", "weight"])
                 LOGGER.info("Building coauthorship graph %s", ref_date)
@@ -285,9 +296,12 @@ class APSBuilder(Builder):
                 LOGGER.info("Graph stored at %s", graph_file_name)
         with open("%s/files.json" % coauthorship_graphs_dir, "wb") as files:
             files.write(json.dumps(created_files))
+        return created_files
 
     def coauthors_graph(self, work_id, graph_file_name):
         """
+        Saves coauthorship graph for specified work_id in graph file
+        at graph_file_name.
         """
         authors_list = self.works[work_id][WORK_INFO][AUTHORS_LIST]
         authors_count = len(authors_list)
@@ -315,27 +329,59 @@ class APSBuilder(Builder):
         each line represents an author citing another author. The edges are
         weighted, which is inversely proportional to the number of authors
         in the cited work.
+
+        Parameters
+        ----------
+        resolution: str
+            If 'year', the time period is year, creating a graph file per year.
+            If 'month', the time period is month, creating a folder for each
+            year within files for each month with data.
+            Default: 'year'.
+        from_year: int
+            For time range, considering works published from this year onward.
+            Default: 0.
+        until_year: int
+            For time range, considering works published until this year.
+            Default: inf.
+
+        Returns
+        -------
+        dict:
+            Dictionary with paths for all created files.
         """
         resolution = kwargs.get("resolution", "year")
+        from_year = kwargs.get("from_year", 0)
+        until_year = kwargs.get("until_year", float("inf"))
         grouped_works = self.group_by_time(self.works, resolution=resolution)
         citation_graphs_dir = "%s/citation_graphs" % self.output_dir_path
         set_dir(citation_graphs_dir)
         created_files = []
         # For each time mark T
         for (ref_date, works_list) in grouped_works:
-            LOGGER.info("Building citation graph %s", ref_date)
-            graph_file_name = self.get_graph_file_name(citation_graphs_dir, ref_date, resolution, "citations")
-            created_files.append(graph_file_name)
-            self._make_graph({}, graph_file_name, header=["author_i", "author_j", "weight"])
-            # For each work i in time T
-            for work_id in works_list:
-                self.citations_graph(work_id, graph_file_name)
-            self.sum_edges(graph_file_name)
-            LOGGER.info("Graph stored at %s", graph_file_name)
+            if ref_date.year >= from_year and ref_date.year < until_year:
+                LOGGER.info("Building citation graph %s", ref_date)
+                graph_file_name = self.get_graph_file_name(citation_graphs_dir,
+                                                           ref_date,
+                                                           resolution,
+                                                           "citations")
+                created_files.append(graph_file_name)
+                self._make_graph({},
+                                 graph_file_name,
+                                 header=["author_i", "author_j", "weight"])
+                # For each work i in time T
+                for work_id in works_list:
+                    self.citations_graph(work_id, graph_file_name)
+                self.sum_edges(graph_file_name)
+                LOGGER.info("Graph stored at %s", graph_file_name)
         with open("%s/files.json" % citation_graphs_dir, "wb") as files:
             files.write(json.dumps(created_files))
+        return created_files
 
     def citations_graph(self, work_id, graph_file_name):
+        """
+        Saves citation graph for specified work_id in graph file
+        at graph_file_name.
+        """
         # Loading list of authors and list of cited works
         cited_works = self.works[work_id][WORK_INFO][CITED_WORKS]
         work_authors = self.works[work_id][WORK_INFO][AUTHORS_LIST]
@@ -358,9 +404,9 @@ class APSBuilder(Builder):
 
 if __name__ == "__main__":
     APS_BUILDER = APSBuilder()
-    APS_BUILDER.find_works()
+    #APS_BUILDER.find_works()
     #APS_BUILDER.load_from_dump()
-    APS_BUILDER.load_citations()
-    APS_BUILDER.dump_data()
-    APS_BUILDER.make_citation_graphs(resolution="month")
-    APS_BUILDER.make_coauthorship_graphs(resolution="month")
+    #APS_BUILDER.load_citations()
+    #APS_BUILDER.dump_data()
+    #APS_BUILDER.make_citation_graphs(resolution="month")
+    #APS_BUILDER.make_coauthorship_graphs(resolution="month")

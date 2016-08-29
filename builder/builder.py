@@ -22,10 +22,6 @@ class Builder(object):
     def _make_graph(edges, output_path, **kwargs):
         """
         Exports graph file in csv format
-
-        Parameters
-        ----------
-
         """
         header = kwargs.get("header", None)
         open_mode = kwargs.get("open_mode", "wb")
@@ -96,12 +92,6 @@ class Builder(object):
         """
         Returns True if check date belongs to same ref_date period.
 
-        Parameters
-        ----------
-
-        Returns
-        -------
-
         Examples
         --------
         >>> solve_date("2015-10-24", "2015-10-20", "month")
@@ -129,16 +119,6 @@ class Builder(object):
     @staticmethod
     def get_graph_file_name(output_dir, ref_date, resolution, g_type):
         """
-        
-        Parameters
-        ----------
-
-        Returns
-        -------
-
-        Examples
-        --------
-        >>> 
         """
         # Creating one folder per year
         date_str = "%d/%d/%d" % (ref_date.year, ref_date.month, ref_date.day)
@@ -158,16 +138,6 @@ class Builder(object):
     @staticmethod
     def group_by_time(items, **kwargs):
         """
-        
-        Parameters
-        ----------
-
-        Returns
-        -------
-
-        Examples
-        --------
-        >>> 
         """
         groups = []
         # Becomes zero at first iteration
@@ -192,16 +162,6 @@ class Builder(object):
     @staticmethod
     def sum_edges(graph_path):
         """
-        
-        Parameters
-        ----------
-
-        Returns
-        -------
-
-        Examples
-        --------
-        >>> 
         """
         # sorting graph file
         graph_file = open(graph_path, "r")

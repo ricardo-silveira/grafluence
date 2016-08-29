@@ -9,11 +9,23 @@ from _helper import set_dir, LOGGER
 
 class Builder(object):
     """
+    Methods
+    -------
+    _make_graph(edges, output_path)
+    add_edge(edges, v_i, v_j, weight)
+    is_same_resolution(ref_date, check_date)
+    group_by_time(items)
+    sum_edges(graph_file_path)
     """
+
     @staticmethod
     def _make_graph(edges, output_path, **kwargs):
         """
         Exports graph file in csv format
+
+        Parameters
+        ----------
+
         """
         header = kwargs.get("header", None)
         open_mode = kwargs.get("open_mode", "wb")
@@ -26,22 +38,69 @@ class Builder(object):
                     writer.writerow([v_i, v_j, weight])
 
     @staticmethod
-    def add_edge(graph, v_i, v_j, weight, **kwargs):
-        directed = kwargs.get("directed", False)
-        if not directed and v_j < v_i:
-            aux = v_i
-            v_i = v_j
-            v_j = aux
-        if v_i not in graph:
-            graph[v_i] = {}
-        if v_j not in graph[v_i]:
-            graph[v_i][v_j] = 0.0
-        graph[v_i][v_j] += weight
+    def add_edge(graph, v_i, v_j, weight=1, **kwargs):
+        """
+        Inserts edge (v_i, v_j) in graph and its respective weight.
+
+        Parameters
+        ----------
+        edges: dict
+        v_i: int
+        v_j: int
+        weight: float
+
+        Returns
+        -------
+        bool:
+            True if edge was inserted successfully, False otherwise.
+
+        Examples
+        --------
+        >>> edges = {}
+        >>> add_edge(edges, 0, 1, 0.5)
+        >>> True
+
+        >>> edges = []
+        >>> add_edge(edges, 0, 1, 0.5)
+        >>> False
+
+        >>> edges = {}
+        >>> add_edge(edges, 0, 1)
+        >>> True
+        >>> edges[0]
+        >>> {1: 1}
+
+        >>> edges = {}
+        >>> add_edge(edges, 0, 1, 0.5)
+        >>> True
+        >>> edges[0]
+        >>> {1: 0.5}
+        """
+        try:
+            directed = kwargs.get("directed", False)
+            if not directed and v_j < v_i:
+                aux = v_i
+                v_i = v_j
+                v_j = aux
+            if v_i not in graph:
+                graph[v_i] = {}
+            if v_j not in graph[v_i]:
+                graph[v_i][v_j] = 0.0
+            graph[v_i][v_j] += weight
+            return True
+        except Exception:
+            return False
 
     @staticmethod
     def is_same_resolution(ref_date, check_date, resolution):
         """
         Returns True if check date belongs to same ref_date period.
+
+        Parameters
+        ----------
+
+        Returns
+        -------
 
         Examples
         --------
@@ -69,6 +128,18 @@ class Builder(object):
 
     @staticmethod
     def get_graph_file_name(output_dir, ref_date, resolution, g_type):
+        """
+        
+        Parameters
+        ----------
+
+        Returns
+        -------
+
+        Examples
+        --------
+        >>> 
+        """
         # Creating one folder per year
         date_str = "%d/%d/%d" % (ref_date.year, ref_date.month, ref_date.day)
         if resolution == "month":
@@ -87,6 +158,16 @@ class Builder(object):
     @staticmethod
     def group_by_time(items, **kwargs):
         """
+        
+        Parameters
+        ----------
+
+        Returns
+        -------
+
+        Examples
+        --------
+        >>> 
         """
         groups = []
         # Becomes zero at first iteration
@@ -111,6 +192,16 @@ class Builder(object):
     @staticmethod
     def sum_edges(graph_path):
         """
+        
+        Parameters
+        ----------
+
+        Returns
+        -------
+
+        Examples
+        --------
+        >>> 
         """
         # sorting graph file
         graph_file = open(graph_path, "r")

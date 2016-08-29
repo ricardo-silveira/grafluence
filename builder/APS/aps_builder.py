@@ -102,7 +102,7 @@ class APSBuilder(Builder):
         # Number of elements in the the authors list
         self.authors_count = 0
 
-    def find_works(self, **kwargs):
+    def find_works(self):
         """
         Loads all works in json files in the metadata folder and their
         respective sub-directories. The work information is stored in
@@ -189,6 +189,13 @@ class APSBuilder(Builder):
     def load_from_dump(self, **kwargs):
         """
         Loads authors map, works map and works list json files into memory.
+
+        Parameters
+        ----------
+        authors_dump_name: str
+            Default: aps_authors
+        works_dump_name: str
+            Default: aps_works
         """
         authors_dump_name = kwargs.get("authors_dump_name", "aps_authors")
         authors_dump_path = "%s/%s.json" % (self.output_dir_path,
@@ -202,7 +209,7 @@ class APSBuilder(Builder):
         with open(works_dump_path, "r") as works_dump:
             self.works = json.load(works_dump)
 
-    def dump_data(self, **kwargs):
+    def dump_data(self):
         """
         Saves authors map, works map and works list as json files.
         """
@@ -215,17 +222,16 @@ class APSBuilder(Builder):
         dump(self.works_map, works_map_dump_path)
         dump(self.authors_map, authors_map_dump_path)
 
-    def load_citations(self, **kwargs):
+    def load_citations(self):
         """
         Loads relation of cited works from csv file, in which each line represents
         a work citing another.
         """
         line_counter = 0
-        citation_csv_path = kwargs.get("citation_csv_path", self.citation_csv_path)
         not_listed = {}
         LOGGER.info("Loading citations!")
         before = time.time()
-        with open(citation_csv_path) as csv_file:
+        with open(self.citation_csv_path) as csv_file:
             first_line = True
             for line in csv_file:
                 line_counter += 1
@@ -302,6 +308,13 @@ class APSBuilder(Builder):
         """
         Saves coauthorship graph for specified work_id in graph file
         at graph_file_name.
+
+        Parameters
+        ----------
+        work_id: int
+            index in list of works
+        graph_file_name: str
+            name of graph file to append more edges
         """
         authors_list = self.works[work_id][WORK_INFO][AUTHORS_LIST]
         authors_count = len(authors_list)
@@ -364,13 +377,13 @@ class APSBuilder(Builder):
                                                            ref_date,
                                                            resolution,
                                                            "citations")
-                created_files.append(graph_file_name)
                 self._make_graph({},
                                  graph_file_name,
                                  header=["author_i", "author_j", "weight"])
                 # For each work i in time T
                 for work_id in works_list:
                     self.citations_graph(work_id, graph_file_name)
+                created_files.append(graph_file_name)
                 self.sum_edges(graph_file_name)
                 LOGGER.info("Graph stored at %s", graph_file_name)
         with open("%s/files.json" % citation_graphs_dir, "wb") as files:
@@ -381,6 +394,13 @@ class APSBuilder(Builder):
         """
         Saves citation graph for specified work_id in graph file
         at graph_file_name.
+
+        Parameters
+        ----------
+        work_id: int
+            index in list of works
+        graph_file_name: str
+            name of graph file to append more edges
         """
         # Loading list of authors and list of cited works
         cited_works = self.works[work_id][WORK_INFO][CITED_WORKS]

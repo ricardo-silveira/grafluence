@@ -110,7 +110,9 @@ class Builder(object):
             aux_date = check_date.replace(year=max(ref_date, check_date).year)
             if resolution == "month":
                 aux_date = aux_date.replace(month=max(ref_date, check_date).month)
-                aux_date = aux_date.replace(day=ref_date.day)
+            else:
+                aux_date = aux_date.replace(month=ref_date.month)
+            aux_date = aux_date.replace(day=ref_date.day)
             if aux_date != ref_date:
                 return False
             else:

@@ -8,8 +8,8 @@ from dateutil.parser import parse
 if __name__ == "__main__":
     import sys
     sys.path.append("../")
-from builder import Builder
-from _helper import dump, set_dir, LOGGER
+from builder.builder import Builder
+from builder._helper import dump, set_dir, LOGGER
 # pylint: disable=line-too-long
 
 

@@ -8,8 +8,8 @@ from dateutil.parser import parse
 if __name__ == "__main__":
     import sys
     sys.path.append("../")
-from builder.builder import Builder
-from builder._helper import dump, set_dir, LOGGER
+from builder import Builder
+from _helper import dump, set_dir, LOGGER
 # pylint: disable=line-too-long
 
 
@@ -425,8 +425,8 @@ class APSBuilder(Builder):
 if __name__ == "__main__":
     APS_BUILDER = APSBuilder()
     #APS_BUILDER.find_works()
-    #APS_BUILDER.load_from_dump()
+    APS_BUILDER.load_from_dump()
     #APS_BUILDER.load_citations()
     #APS_BUILDER.dump_data()
-    #APS_BUILDER.make_citation_graphs(resolution="month")
-    #APS_BUILDER.make_coauthorship_graphs(resolution="month")
+    APS_BUILDER.make_citation_graphs(resolution="year", until_year=1930)
+    APS_BUILDER.make_coauthorship_graphs(resolution="year", until_year=1930)

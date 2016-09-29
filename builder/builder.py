@@ -123,18 +123,18 @@ class Builder(object):
         """
         """
         # Creating one folder per year
-        date_str = "%d/%d/%d" % (ref_date.year, ref_date.month, ref_date.day)
         if resolution == "month":
-            graph_dir = set_dir("%s/%s" % (output_dir, date_str.split("/")[0]))
-            graph_file_name = "%s/aps_%s_%s_%s.csv" % (graph_dir,
+            graph_dir = set_dir("%s/%d" % (output_dir, ref_date.year))
+            graph_file_name = "%s/aps_%s_%d_%d.csv" % (graph_dir,
                                                        g_type,
-                                                       date_str.split("/")[0],
-                                                       date_str.split("/")[1])
+                                                       ref_date.year,
+                                                       ref_date.month)
         if resolution == "year":
             graph_dir = set_dir(output_dir)
-            graph_file_name = "%s/aps_%s_%s.csv" % (graph_dir,
+            graph_file_name = "%s/aps_%s_%d.csv" % (graph_dir,
                                                     g_type,
-                                                    date_str.split("/")[1])
+                                                    ref_date.year)
+            LOGGER.info(graph_file_name)
         return graph_file_name
 
     @staticmethod
